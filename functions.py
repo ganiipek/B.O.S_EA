@@ -1,3 +1,4 @@
+from asyncio import sleep
 from datetime import datetime, timedelta
 import os
 import sys
@@ -14,12 +15,20 @@ from tensorflow import keras
 from sklearn.decomposition import PCA
 
 def getData(DATA_PATH:str):
-    df_ = pd.read_csv(DATA_PATH, index_col="Local time", parse_dates=["Local time"])
-
+    df_ = pd.read_csv(DATA_PATH, index_col="Datetime", parse_dates=["Datetime"])
+    df_ = df_[[
+        "Close",
+        "High",
+        "Low",
+        "Open",
+        "Volume"
+    ]]
+    df_ = df_.dropna()
+    
     return df_
 
 
-def getIndicator(df_, symbol:str, dropna=False, fillna=False, save_csv=False, save_excel=False):
+def getIndicator(df_, symbol:str, data:str, dropna=False, fillna=False, save_csv=False, save_excel=False):
     df_ = ta.add_all_ta_features(df_, open="Open", high="High", low="Low",
                                                     close="Close", volume="Volume", fillna=fillna)
 
@@ -28,6 +37,7 @@ def getIndicator(df_, symbol:str, dropna=False, fillna=False, save_csv=False, sa
         "High",
         "Low",
         "Open",
+        "Volume",
 
         "volatility_bbm",
         "volatility_bbh",
@@ -52,10 +62,10 @@ def getIndicator(df_, symbol:str, dropna=False, fillna=False, save_csv=False, sa
         "trend_ichimoku_a",
         "trend_ichimoku_b",
         "trend_visual_ichimoku_a",
-        "trend_visual_ichimoku_b",
+        "trend_visual_ichimoku_b"
 
-        "trend_psar_up",
-        "trend_psar_down"
+        # "trend_psar_up",
+        # "trend_psar_down"
     ]]
 
     df_ = df_.tail(df_.shape[0] - 50)
@@ -65,13 +75,13 @@ def getIndicator(df_, symbol:str, dropna=False, fillna=False, save_csv=False, sa
         df_ = ta.utils.dropna(df_)
 
     if save_csv:
-        path = "./data/indi_" + symbol + ".csv"
+        path = "./data/indi_" + data + ".csv"
         df_.to_csv(path)
 
     if save_excel:
         excel = df_
         excel.index = excel.index.astype(str).str[:-6]
-        path = "./data/indi_" + symbol + ".xlsx"
+        path = "./data/indi_" + data + ".xlsx"
         excel.to_excel(path)
 
     return df_
@@ -85,22 +95,30 @@ def eksik_deger_tablosu(df):
         columns={0: 'Eksik Değerler', 1: '% Değeri'})
     return eksik_deger_tablo_son
 
+def create_dataset(dataset, time_step=1):
+    dataX, dataY = [], []
 
-def split_sequence(seq, n_steps_in, n_steps_out):
+    for i in range(len(dataset)-time_step-1):
+        a = dataset[i:(i+time_step), 0]
+        dataX.append(a)
+        dataY.append(dataset[i + time_step, 0])
+        return np.array(dataX), np.array(dataY)
+
+def split_sequence(dataset, n_steps_in, n_steps_out):
     # Creating a list for both variables
     data_X, data_Y = [], []
-
-    for i in range(len(seq)):
+    
+    for i in range(len(dataset)):
         end = i + n_steps_in
         out_end = end + n_steps_out
 
-        if out_end > len(seq):
+        if out_end > len(dataset):
             break
 
         # Splitting the sequences into: x = past prices and indicators, y = prices ahead
-        seq_x, seq_y = seq[i:end, :], seq[end:out_end,0]
-        #print("seq_x", seq_x)
-        #print("seq_y", seq_y)
+        seq_x, seq_y = dataset[i:end, :], dataset[end:out_end,0]
+        # print("seq_x: ", seq_x)
+        # print("seq_y: ", seq_y)
         data_X.append(seq_x)
         data_Y.append(seq_y)
 
@@ -126,7 +144,6 @@ def pick_bilme_orani(decision_values, real_values):
 def validater(symbol, df, model, n_features, close_scaler, n_per_in, n_per_out, intervall, grafik=False):
     # Creating an empty DF to store the predictions
     predictions = pd.DataFrame(index=df.index, columns=[df.columns[0]])
-    # print("kontrol1",predictions)
 
     for i in range(n_per_out, len(df) - n_per_in, n_per_out):
         #print("---------------")
@@ -134,27 +151,38 @@ def validater(symbol, df, model, n_features, close_scaler, n_per_in, n_per_out, 
         # Creating rolling intervals to predict off of
 
         x = df[-i - n_per_in:-i]
+        # print("\n")
         # print(-i - n_per_in,":",-i)
+        # print(x)
         # Predicting using rolling intervals
         yhat = model.predict(np.array(x).reshape(1, n_per_in, n_features))
         # Transforming values back to their normal prices
+        # print("Predict: ", yhat)
         yhat = close_scaler.inverse_transform(yhat)[0]
         # DF to store the values and append later, frequency uses business days
-
+        # print(yhat)
         if intervall == "1m":
             pred_df = pd.DataFrame(yhat,
                                    index=pd.date_range(start=x.index[-1] + timedelta(minutes=1),
                                                        periods=len(yhat),
                                                        freq="min"),
                                    columns=[x.columns[0]])
+            
         elif intervall == "daily":
             pred_df = pd.DataFrame(yhat,
                                    index=pd.date_range(start=x.index[-1] + timedelta(days=1),
                                                        periods=len(yhat),
                                                        freq="B"),
                                    columns=[x.columns[0]])
+            
+        elif intervall == "hourly":
+            pred_df = pd.DataFrame(yhat,
+                                   index=pd.date_range(start=x.index[-1] + timedelta(hours=1),
+                                                       periods=len(yhat),
+                                                       freq="H"),
+                                   columns=[x.columns[0]])
         # Updating the predictions DF
-
+        # print("pred_df:", pred_df)
         predictions.update(pred_df)
 
         percent = round((i / (len(df) - n_per_in)) * 100, 2)
@@ -165,13 +193,17 @@ def validater(symbol, df, model, n_features, close_scaler, n_per_in, n_per_out, 
 
     # predictions = predictions[-(len(df) - n_per_in):]
     # predictions = predictions.fillna(method="ffill")
-    actual = pd.DataFrame(close_scaler.inverse_transform(df[["Close"]]), index= df.index, columns=[x.columns[0]])
+    actual = pd.DataFrame(close_scaler.inverse_transform(df[["Close"]]), index= df.index, columns=[df.columns[0]])
+    # print(df)
+    # print(predictions)
     # actual = actual[-(len(df) - n_per_in):]
 
     #print("Predict Boyutu", predictions.shape, "NaN Sayısı:", predictions.isna().sum().sum())
+    
     model_rmse =  val_rmse(actual, predictions)
-    pick_bilme_oranı = 0 #pick_bilme_orani(predictions.values, actual.values)
-
+    pick_bilme_oranı = pick_bilme_orani(predictions.values, actual.values)
+    
+    print(f"\n\nRMSE: {model_rmse} , Pick Bilme Oranı: %{pick_bilme_oranı}")
     if grafik:
         plt.figure(figsize=(16, 6))
         plt.plot(actual, label="Actual Prices")

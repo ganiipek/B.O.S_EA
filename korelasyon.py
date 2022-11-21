@@ -5,8 +5,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 def getIndicator(dataFrame, dropna=False, fillna=False, save_csv=False, save_excel=False):
-    dataFrame= ta.add_all_ta_features(dataFrame, open="Open", high="High", low="Low",
-                                                    close="Close", volume="Volume", fillna=fillna)
+    dataFrame= ta.add_all_ta_features(dataFrame, open="open", high="high", low="low",
+                                                    close="close", volume="volume", fillna=fillna)
 
     # dataFrame[stockSymbol] = dataFrame[stockSymbol][[
     #     "Close",
@@ -58,29 +58,35 @@ def getIndicator(dataFrame, dropna=False, fillna=False, save_csv=False, save_exc
     return dataFrame
 
 if __name__ == "__main__":
-    DATA_PATH = f"./data/USDJPY_Candlestick_1_M_BID_01.10.2021-25.12.2021.csv"
-    data_df = pd.read_csv(DATA_PATH, index_col="Local time", parse_dates=["Local time"])
-
+    DATA_PATH = f"./data/dax.csv"
+    data_df = pd.read_csv(DATA_PATH, index_col="datetime", parse_dates=["datetime"])
+    data_df = data_df[[
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume"
+    ]]
+    data_df = data_df.dropna()
     print(data_df)
 
-    data_indi_df = getIndicator(dataFrame=data_df, dropna=False, fillna=True, save_csv=False, save_excel=False)
+    data_df = getIndicator(dataFrame=data_df, dropna=False, fillna=True, save_csv=True, save_excel=False)
+    print(data_df)
 
-    print(data_indi_df)
 
-
-    corrmat = data_indi_df.corr()
+    corrmat = data_df.corr()
     corrmat.to_excel("./data/korelasyon.xlsx")
     #saleprice correlation matrix
     k = 90 #number of variables for heatmap
-    cols = corrmat.nlargest(k, 'Close')['Close'].index
-    cm = np.corrcoef(data_indi_df[cols].values.T)
-    sns.set(font_scale=1.25)
-    cm = np.around(cm, decimals=1)
+    cols = corrmat.nlargest(k, 'close')['close'].index
+    cm = np.corrcoef(data_df[cols].values.T)
+    sns.set(font_scale=1)
+    cm = np.around(cm, decimals=6)
     hm = sns.heatmap(cm,
                     cbar=True,
                     annot=True,
                     square=True,
-                    #fmt='.2f',
+                    fmt='.6f',
                     annot_kws={'size': 10},
                     yticklabels=cols.values,
                     xticklabels=cols.values)

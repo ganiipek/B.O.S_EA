@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Apr 12 18:21:19 2022
+
+@author: gani.ipek
+"""
+# %% Import
 import functions
 import train_LSTM
 import os
@@ -14,23 +21,22 @@ import tensorflow as tf
 os.environ['TF_XLA_FLAGS'] = '--tf_xla_enable_xla_devices'
 from datetime import datetime
 
-# FOR REPRODUCIBILITY
+# %% FOR REPRODUCIBILITY
 np.random.seed(7)
 print(f"Tensorflow Version: {tf.__version__}")
 print("GPUs: ", len(tf.config.experimental.list_physical_devices('GPU')))
 pd.set_option('display.max_rows', 100)
 pd.set_option('display.min_rows', 100)
 
+# %% SETTINGS
+symbol = "EURUSD"
 
-## settings ##
-symbol = "USDJPY"
-
-n_per_in = 30
+n_per_in = 128
 n_per_out = 1  # fonksiyonlar.validater freq değiştirmeyi unutma şu anda = 1min
 
 grafik = False
 train = False
-intervall = "1m"
+intervall = "hourly" # 1m
 
 activation_function = "tanh" #relu
 activation_function_last = "tanh" #tanh
@@ -40,34 +46,24 @@ batch_size = 32
 validation_split = 0.10
 shuffle = True
 
-###########
+# %% Loading Data
+data = "indi_EURUSD_2013-01-01 00_00_00_2022-01-02 00_00_00_1hour"
 
+df_ = functions.getData(f"./data/{data}.csv")
+# df_ = functions.getData(f"./data/indi_DAX.csv")
+# df_["Close"] = df_["Close"] - df_["Close"].shift(1)
 
-df_ = {}
-df_news_ = {}
-df_basic_data_ = {}
-df_ = functions.getData(f"./data/indi_USDJPY.csv")
-# df_ = functions.getData(f"./data/USDJPY_Candlestick_1_M_BID_01.10.2021-25.12.2021.csv")
-# df_ = functions.getIndicator(df_=df_,symbol=symbol, dropna=False, fillna=False, save_csv=True, save_excel=True)
-
+# df_ = functions.getIndicator(df_=df_, symbol=symbol, data=data, dropna=False, fillna=False, save_csv=True, save_excel=False)
 print(f"Data Shape: {df_.shape}")
-print(functions.eksik_deger_tablosu(df_))
+# df_ = df_.tail(100000)
+# print(functions.eksik_deger_tablosu(df_))
 
-
+# %% Preprocessing Data
 close_scaler = MinMaxScaler(feature_range=(0,1))
 close_scaler.fit(df_[['Close']])
 
 scaler = MinMaxScaler(feature_range=(0,1))
 df_ = pd.DataFrame(scaler.fit_transform(df_), columns=df_.columns, index=df_.index)
-
-# df_basic_data_ = df_[["Close","High","Low","Open"]]
-# df_ = df_.drop(columns = ["Close","High","Low","Open"])
-
-# pca = PCA(n_components=10)
-# df_ = pd.DataFrame(pca.fit_transform(df_), index=df_.index)
-
-# df_basic_data_ = df_basic_data_.join(df_)
-# df_ = df_basic_data_
 
 n_features = df_.shape[1]
 
@@ -80,7 +76,19 @@ if train:
     print("X_test -> ", X_test.shape, "y_test -> ", y_test.shape)
     print("\n\n\n")
 
-    model = train_LSTM.dailyTrainLSTM(X_train, X_test, y_train, y_test, n_per_in, n_per_out, n_features, grafik=True)
+    model = train_LSTM.dailyTrainLSTM(
+        X_train,
+        X_test,
+        y_train, 
+        y_test, 
+        epoch_size,
+        batch_size,
+        shuffle,
+        n_per_in, 
+        n_per_out, 
+        n_features, 
+        grafik=True
+        )
 
     # model.save(os.path.dirname(os.path.dirname(__file__)) + "/model/" + symbol + "_" + datetime.now().strftime("%Y-%m-%d_%H-%M") + ".h5")
     model.save(f"./Model/{symbol}_{intervall}.h5")
@@ -90,6 +98,7 @@ else:
     #model.summary()
     print("Old model loaded\n")
 
+# %% Predict
 predictions, actual, model_rmse, pick_bilme_oranı = functions.validater(symbol, df_.tail(500), model, n_features, close_scaler, n_per_in, n_per_out, intervall, grafik=True)
 
 # profit, total_buy, total_sell = functions.compare_trades(actual, predictions, n_per_in, n_per_out, fee=0, grafik=False, detail=False)
@@ -101,7 +110,7 @@ predictions, actual, model_rmse, pick_bilme_oranı = functions.validater(symbol,
 #                     "model_rmse": model_rmse,
 #                     "pick_bilme_oranı": pick_bilme_oranı}
 
-print(f"\n\nRMSE: {model_rmse} , Pick Bilme Oranı: %{pick_bilme_oranı}")
+# print(f"\n\nRMSE: {model_rmse} , Pick Bilme Oranı: %{pick_bilme_oranı}")
 # print(f"Alım işlemi: {model_statistic['total_buy']} adet, Satım işlemi: {model_statistic['total_sell']} adet -> Kar: {model_statistic['profit']}")
 
 
